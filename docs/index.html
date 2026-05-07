@@ -320,7 +320,27 @@ body {
 .debug-row { display: flex; justify-content: space-between; gap: 8px; }
 .dswatch { display: inline-block; width: 10px; height: 10px; border-radius: 2px; vertical-align: middle; margin-right: 3px; }
 
-canvas { display: none; }
+/* ── Camera switch button ── */
+#btn-cam-switch {
+  position: absolute;
+  bottom: 10px; right: 10px;
+  width: 40px; height: 40px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(0,0,0,0.5);
+  color: #fff;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer;
+  backdrop-filter: blur(4px);
+  transition: background 0.15s, transform 0.15s;
+  z-index: 10;
+}
+#btn-cam-switch:active { background: rgba(80,80,80,0.7); transform: scale(0.92); }
+#btn-cam-switch.spinning svg { animation: camSpin 0.35s ease; }
+@keyframes camSpin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(180deg); }
+}
 
 /* ── Wrapper needs position:relative for overlay screens ── */
 #wrapper { position: relative; min-height: 100vh; }
@@ -363,6 +383,16 @@ canvas { display: none; }
       <rect x="58" y="58" width="184" height="184" fill="none" stroke="rgba(255,255,255,0.4)" stroke-width="1.5" rx="4"/>
     </svg>
     <div id="flash"></div>
+    <button id="btn-cam-switch" title="カメラ切替">
+      <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M20 7h-3a2 2 0 0 1-2-2V2"/>
+        <path d="M9 2H4a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V7l-5-5z"/>
+        <path d="M12 18a4 4 0 1 0 0-8 4 4 0 0 0 0 8z"/>
+        <path d="m15.5 9.5-1 1"/>
+        <polyline points="16 7 18 9 16 11"/>
+        <polyline points="8 7 6 9 8 11"/>
+      </svg>
+    </button>
   </div>
 
   <!-- Quest area: current + next preview -->
@@ -1115,23 +1145,47 @@ debugToggle.addEventListener('click',()=>{
 });
 
 // ── Camera ──
-async function startCamera(){
+let currentFacingMode = 'environment'; // 'environment' = アウト, 'user' = イン
+let currentStream = null;
+
+async function startCamera(facingMode = 'environment'){
+  // 既存ストリームを停止
+  if(currentStream){
+    currentStream.getTracks().forEach(t => t.stop());
+    currentStream = null;
+  }
   try{
-    const stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'},width:{ideal:1280},height:{ideal:720}}});
-    video.srcObject=stream;
-    video.onloadedmetadata=()=>{
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video:{
+        facingMode: { ideal: facingMode },
+        width:  { ideal: 1280 },
+        height: { ideal: 720 }
+      }
+    });
+    currentStream = stream;
+    currentFacingMode = facingMode;
+    video.srcObject = stream;
+    video.onloadedmetadata = () => {
       video.play();
-      console.log(`[RubikGame] Camera: ${video.videoWidth}×${video.videoHeight}`);
-      gameLoop(); // passive preview loop
+      console.log(`[RubikGame] Camera(${facingMode}): ${video.videoWidth}×${video.videoHeight}`);
     };
   }catch(err){
-    console.error('[RubikGame] Camera error:',err);
-    document.getElementById('screen-start').querySelector('p').innerHTML+=
+    console.error('[RubikGame] Camera error:', err);
+    document.querySelector('#screen-start p').innerHTML +=
       `<br><span style="color:#f87171">⚠ カメラエラー: ${err.message}</span>`;
   }
 }
 
-startCamera();
+const btnCamSwitch = document.getElementById('btn-cam-switch');
+btnCamSwitch.addEventListener('click', async () => {
+  btnCamSwitch.classList.add('spinning');
+  setTimeout(() => btnCamSwitch.classList.remove('spinning'), 400);
+  const next = currentFacingMode === 'environment' ? 'user' : 'environment';
+  await startCamera(next);
+});
+
+startCamera('environment');
+gameLoop();
 </script>
 </body>
 </html>
