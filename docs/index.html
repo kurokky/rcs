@@ -48,6 +48,15 @@ input[type=range]::-webkit-slider-thumb { -webkit-appearance:none; width:22px; h
 #grid-pos-preview { position:relative; width:100%; aspect-ratio:1; background:#111; border-radius:10px; overflow:hidden; margin-top:8px; }
 #grid-pos-preview video { width:100%; height:100%; object-fit:cover; display:block; }
 #grid-pos-svg { position:absolute; inset:0; pointer-events:none; }
+.s-cell {
+  width:36px; height:36px; border-radius:5px;
+  background:#222; border:2px solid rgba(255,255,255,0.1);
+  position:relative; transition:background 0.1s;
+  display:flex; align-items:center; justify-content:center;
+  font-size:9px; font-weight:700; color:rgba(255,255,255,0.9);
+  text-shadow:0 1px 2px rgba(0,0,0,0.9);
+  overflow:hidden;
+}
 #btn-settings-reset { margin:0 16px 24px; padding:12px; border-radius:10px; border:1px solid #dc2626; background:transparent; color:#dc2626; font-size:14px; font-family:inherit; cursor:pointer; font-weight:600; }
 
 /* ══ GAME ══ */
@@ -189,6 +198,25 @@ canvas { display:none; }
         <div class="s-row-header"><span class="s-label">左右 いち</span><span class="s-value" id="val-grid-x">0%</span></div>
         <input type="range" id="sl-grid-x" min="-35" max="35" step="1" value="0">
         <div class="s-desc">マイナスでひだりに、プラスでみぎに うごきます</div>
+      </div>
+
+      <!-- Live recognition result — same as game UI -->
+      <div class="s-row" style="background:#111; border-radius:0 0 10px 10px;">
+        <div style="font-size:10px;color:#555;margin-bottom:6px;letter-spacing:.06em;text-transform:uppercase;">にんしき けっか（リアルタイム）</div>
+        <div style="display:flex;align-items:center;gap:10px;">
+          <div id="s-grid-display" style="display:grid;grid-template-columns:repeat(3,36px);gap:4px;flex-shrink:0;">
+            <div class="s-cell" id="sc0"></div>
+            <div class="s-cell" id="sc1"></div>
+            <div class="s-cell" id="sc2"></div>
+            <div class="s-cell" id="sc3"></div>
+            <div class="s-cell" id="sc4"></div>
+            <div class="s-cell" id="sc5"></div>
+            <div class="s-cell" id="sc6"></div>
+            <div class="s-cell" id="sc7"></div>
+            <div class="s-cell" id="sc8"></div>
+          </div>
+          <div id="s-color-detail" style="flex:1;font-size:11px;line-height:1.9;color:#666;"></div>
+        </div>
       </div>
     </div>
 
@@ -530,10 +558,18 @@ const cubeStatusEl=document.getElementById('settings-cube-status');
 function drawSettingsRecognition(){
   const wrap=document.getElementById('grid-pos-preview');
   const dw=wrap.clientWidth, dh=wrap.clientHeight;
-  recCanvas.width=dw; recCanvas.height=dh;
+  const dpr=window.devicePixelRatio||1;
+
+  // Set canvas physical pixels to match display size × DPR (high-DPI fix)
+  if(recCanvas.width!==Math.round(dw*dpr)||recCanvas.height!==Math.round(dh*dpr)){
+    recCanvas.width=Math.round(dw*dpr);
+    recCanvas.height=Math.round(dh*dpr);
+    recCanvas.style.width=dw+'px';
+    recCanvas.style.height=dh+'px';
+  }
+  recCtx.setTransform(dpr,0,0,dpr,0,0);
   recCtx.clearRect(0,0,dw,dh);
 
-  // We need to sample from the settings video using the same logic
   if(settingsVid.readyState<2){settingsPreviewFrame=requestAnimationFrame(drawSettingsRecognition);return;}
   const vw=settingsVid.videoWidth||640, vh=settingsVid.videoHeight||480;
   const tmpCanvas=document.createElement('canvas');
@@ -542,19 +578,42 @@ function drawSettingsRecognition(){
   tmpCtx.drawImage(settingsVid,0,0,vw,vh);
   const imgData=tmpCtx.getImageData(0,0,vw,vh);
 
-  // Detect colors using current settings
   const colors=[];
   for(let row=0;row<3;row++) for(let col=0;col<3;col++){
     const rgb=sampleCell(imgData,vw,vh,col,row);
     colors.push({...classifyColor(rgb.r,rgb.g,rgb.b),rgb});
   }
 
-  // Cube visible check
   const visible=isCubeVisible(imgData,vw,vh,colors);
   cubeStatusEl.textContent=visible?'✓ キューブ にんしき':'✗ みえていない';
   cubeStatusEl.style.color=visible?'#4ade80':'#ff5f5f';
 
-  // Draw recognition result as colored cells on display coords
+  // Update the live grid cells (same as game UI)
+  const freq={};
+  colors.forEach((c,i)=>{
+    const el=document.getElementById('sc'+i);
+    if(el){
+      el.style.background=c.hex;
+      el.style.borderColor=c.hex==='#FFFFFF'?'rgba(0,0,0,0.2)':'rgba(255,255,255,0.15)';
+      el.textContent=c.label;
+      el.style.color=c.hex==='#FFFFFF'?'#333':'rgba(255,255,255,0.9)';
+    }
+    freq[c.name]=(freq[c.name]||0)+1;
+  });
+
+  // Color detail text: count per color
+  const detailEl=document.getElementById('s-color-detail');
+  if(detailEl){
+    const lines=Object.entries(freq)
+      .sort((a,b)=>b[1]-a[1])
+      .map(([key,cnt])=>{
+        const cc=CUBE_COLORS.find(c=>c.name===key);
+        const bar='■'.repeat(cnt)+'□'.repeat(9-cnt);
+        return `<span style="color:${cc?.hex==='#FFFFFF'?'#bbb':cc?.hex}">${cc?.label}</span> <span style="color:#555;font-family:monospace;">${bar}</span> <span style="color:#aaa;">${cnt}</span>`;
+      });
+    detailEl.innerHTML=lines.join('<br>');
+  }
+
   const{oL,oT,oW,oH}=getGridBounds();
   const cW=oW/3, cH=oH/3;
   let i=0;
@@ -563,23 +622,39 @@ function drawSettingsRecognition(){
       const c=colors[i++];
       const x=(oL+col*cW)*dw, y=(oT+row*cH)*dh;
       const w=cW*dw, h=cH*dh;
+      const pad=0.05;
+      const rx=x+w*pad, ry=y+h*pad, rw=w*(1-pad*2), rh=h*(1-pad*2);
 
-      // Semi-transparent fill with detected color
-      recCtx.globalAlpha=0.55;
+      // Semi-transparent color fill with rounded rect
+      recCtx.globalAlpha=0.62;
       recCtx.fillStyle=c.hex;
-      const pad=0.06;
-      recCtx.fillRect(x+w*pad, y+h*pad, w*(1-pad*2), h*(1-pad*2));
+      const r=4;
+      recCtx.beginPath();
+      recCtx.roundRect(rx,ry,rw,rh,r);
+      recCtx.fill();
 
-      // Color label text
+      // Thin border
+      recCtx.globalAlpha=0.8;
+      recCtx.strokeStyle='rgba(255,255,255,0.4)';
+      recCtx.lineWidth=1;
+      recCtx.beginPath();
+      recCtx.roundRect(rx,ry,rw,rh,r);
+      recCtx.stroke();
+
+      // Label — fit font size to cell, max 13px, min 9px
       recCtx.globalAlpha=1;
-      recCtx.font=`bold ${Math.round(h*0.22)}px -apple-system, sans-serif`;
+      const maxFontPx=Math.min(13, Math.max(9, Math.floor(rw/4.2)));
+      recCtx.font=`bold ${maxFontPx}px -apple-system,"Helvetica Neue",sans-serif`;
       recCtx.textAlign='center';
       recCtx.textBaseline='middle';
-      // Shadow for readability
-      recCtx.fillStyle='rgba(0,0,0,0.7)';
-      recCtx.fillText(c.label, x+w*0.5+1, y+h*0.5+1);
-      recCtx.fillStyle=c.hex==='#FFFFFF'?'#222':'#fff';
-      recCtx.fillText(c.label, x+w*0.5, y+h*0.5);
+      const cx=x+w*0.5, cy=y+h*0.5;
+
+      // Drop shadow
+      recCtx.fillStyle='rgba(0,0,0,0.85)';
+      recCtx.fillText(c.label, cx+1, cy+1);
+      // Main text — white unless white tile
+      recCtx.fillStyle=c.hex==='#FFFFFF'?'#111':'#fff';
+      recCtx.fillText(c.label, cx, cy);
     }
   }
 
