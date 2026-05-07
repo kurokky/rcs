@@ -1127,13 +1127,25 @@ function resetGame(){
   hudTimer.className='hud-value';
   hudScore.textContent='0';
   hudQ.textContent='—';
-  // restart passive camera loop for preview
-  gameLoop();
+  // restart passive camera loop for preview (only if camera already running)
+  if(cameraStarted) gameLoop();
 }
 
-// ── Events ──
+// カメラ・gameLoopはユーザーがボタンを押すまで起動しない
+// スタートボタン押下時に初回起動
+let cameraStarted = false;
+
+async function ensureCameraStarted(){
+  if(!cameraStarted){
+    cameraStarted = true;
+    await startCamera('environment');
+    gameLoop();
+  }
+}
+
 document.querySelectorAll('.btn-time').forEach(btn => {
-  btn.addEventListener('click', () => {
+  btn.addEventListener('click', async () => {
+    await ensureCameraStarted();
     const sec = parseInt(btn.dataset.sec, 10);
     startGame(sec);
   });
@@ -1183,9 +1195,6 @@ btnCamSwitch.addEventListener('click', async () => {
   const next = currentFacingMode === 'environment' ? 'user' : 'environment';
   await startCamera(next);
 });
-
-startCamera('environment');
-gameLoop();
 </script>
 </body>
 </html>
