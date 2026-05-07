@@ -171,6 +171,7 @@ canvas { display:none; }
   <div class="settings-header">
     <button id="btn-settings-close">✕</button>
     <h2>⚙ せってい</h2>
+    <button id="btn-settings-reset-header" style="font-size:11px;padding:5px 10px;border-radius:7px;border:1px solid #dc2626;background:transparent;color:#dc2626;cursor:pointer;font-family:inherit;white-space:nowrap;">リセット</button>
   </div>
   <div class="settings-body">
 
@@ -186,7 +187,7 @@ canvas { display:none; }
       </div>
       <div class="s-row">
         <div class="s-row-header"><span class="s-label">グリッド サイズ</span><span class="s-value" id="val-grid-size">60%</span></div>
-        <input type="range" id="sl-grid-size" min="30" max="90" step="2" value="60">
+        <input type="range" id="sl-grid-size" min="30" max="100" step="2" value="60">
         <div class="s-desc">おおきくするとキューブ全体をおおきく とりこめます</div>
       </div>
       <div class="s-row">
@@ -387,13 +388,42 @@ function rgbDist(r1,g1,b1,r2,g2,b2){const dr=r1-r2,dg=g1-g2,db=b1-b2;return dr*d
 function rgbToHsv(r,g,b){r/=255;g/=255;b/=255;const max=Math.max(r,g,b),min=Math.min(r,g,b),d=max-min;let h=0,s=max===0?0:d/max,v=max;if(max!==min){switch(max){case r:h=((g-b)/d+(g<b?6:0))/6;break;case g:h=((b-r)/d+2)/6;break;case b:h=((r-g)/d+4)/6;break;}}return{h:h*360,s,v};}
 function classifyColor(r,g,b){
   const{h,s,v}=rgbToHsv(r,g,b);
+
+  // しろ: 明度高・彩度低
   if(v>CFG.whiteV&&s<CFG.whiteS)return CUBE_COLORS[0];
-  if(s<CFG.grayS){let best=CUBE_COLORS[0],bestD=Infinity;for(const c of CUBE_COLORS){const d=rgbDist(r,g,b,c.r,c.g,c.b);if(d<bestD){bestD=d;best=c;}}return best;}
-  if(h>=195&&h<=260)return CUBE_COLORS[4];
-  if(h>=80&&h<=165)return CUBE_COLORS[5];
-  if(h>=38&&h<=80)return CUBE_COLORS[1];
-  if(h>300||h<=37){if(h>=CFG.orangeHMin&&h<=37&&r>100&&g>40){if(g/(r+1)>CFG.orangeG)return CUBE_COLORS[2];}return CUBE_COLORS[3];}
-  let best=CUBE_COLORS[0],bestD=Infinity;for(const c of CUBE_COLORS){const d=rgbDist(r,g,b,c.r,c.g,c.b);if(d<bestD){bestD=d;best=c;}}return best;
+
+  // 彩度が低くても hue が明確な色帯に入っていれば優先判定
+  // （インカメラ・蛍光灯下で彩度が落ちた青・緑・黄をRGBフォールバックで誤判定するのを防ぐ）
+  if(s>=0.10){
+    if(h>=185&&h<=270)return CUBE_COLORS[4]; // あお（少し広め）
+    if(h>=75&&h<=170) return CUBE_COLORS[5]; // みどり
+    if(h>=35&&h<=75)  return CUBE_COLORS[1]; // きいろ
+  }
+
+  // 彩度が低い → RGBフォールバックだが青と赤の混同を避けるため
+  // B成分が支配的なら青を返す
+  if(s<CFG.grayS){
+    if(b>r&&b>g&&b>80)return CUBE_COLORS[4]; // あお
+    let best=CUBE_COLORS[0],bestD=Infinity;
+    for(const c of CUBE_COLORS){const d=rgbDist(r,g,b,c.r,c.g,c.b);if(d<bestD){bestD=d;best=c;}}
+    return best;
+  }
+
+  // 高彩度の hue 判定
+  if(h>=185&&h<=270)return CUBE_COLORS[4]; // あお
+  if(h>=75&&h<=170) return CUBE_COLORS[5]; // みどり
+  if(h>=35&&h<=75)  return CUBE_COLORS[1]; // きいろ
+
+  // 赤〜オレンジ帯
+  if(h>270||h<=37){
+    if(h>=CFG.orangeHMin&&h<=37&&r>100&&g>40){if(g/(r+1)>CFG.orangeG)return CUBE_COLORS[2];}
+    return CUBE_COLORS[3]; // あか
+  }
+
+  // フォールバック
+  let best=CUBE_COLORS[0],bestD=Infinity;
+  for(const c of CUBE_COLORS){const d=rgbDist(r,g,b,c.r,c.g,c.b);if(d<bestD){bestD=d;best=c;}}
+  return best;
 }
 function sampleCell(imgData,cw,ch,col,row){
   const cropX=(cw-ch)/2,side=ch,{oL,oT,oW,oH}=getGridBounds(),cW=oW/3,cH=oH/3,pad=0.035;
@@ -670,8 +700,7 @@ function stopSettingsPreview(){
   recCtx.clearRect(0,0,recCanvas.width,recCanvas.height);
   cubeStatusEl.textContent='';
 }
-document.getElementById('btn-settings-reset').addEventListener('click',()=>{
-  if(!confirm('せっていをリセットしますか？'))return;
+function applySettingsReset(){
   CFG={...DEFAULTS};saveCfg();
   const map={gridSize:'sl-grid-size',gridY:'sl-grid-y',gridX:'sl-grid-x',matchTh:'sl-match-th',minMatch:'sl-min-match',whiteV:'sl-white-v',whiteS:'sl-white-s',grayS:'sl-gray-s',orangeHMin:'sl-orange-h-min',orangeG:'sl-orange-g',okFrames:'sl-ok-frames',ngFrames:'sl-ng-frames'};
   for(const[k,id]of Object.entries(map)){const sl=document.getElementById(id);if(sl)sl.value=CFG[k];}
@@ -688,6 +717,14 @@ document.getElementById('btn-settings-reset').addEventListener('click',()=>{
   document.getElementById('val-ok-frames').textContent=CFG.okFrames;
   document.getElementById('val-ng-frames').textContent=CFG.ngFrames;
   refreshGridOverlays();
+}
+document.getElementById('btn-settings-reset').addEventListener('click',()=>{
+  if(!confirm('せっていをリセットしますか？'))return;
+  applySettingsReset();
+});
+document.getElementById('btn-settings-reset-header').addEventListener('click',()=>{
+  if(!confirm('せっていをリセットしますか？'))return;
+  applySettingsReset();
 });
 
 // ══ CAMERA ══
