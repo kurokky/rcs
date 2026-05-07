@@ -1,0 +1,1137 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ルービックキューブ カラーゲーム</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif;
+  background: #0f0f13;
+  color: #f0f0f0;
+  display: flex;
+  justify-content: center;
+  min-height: 100vh;
+  padding: 12px;
+}
+#app { width: 100%; max-width: 420px; }
+
+/* ── HUD ── */
+#hud {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 12px;
+  background: #1a1a22;
+  border-radius: 10px;
+  margin-bottom: 10px;
+  border: 1px solid #2a2a36;
+}
+.hud-item { text-align: center; }
+.hud-label { font-size: 10px; color: #666; text-transform: uppercase; letter-spacing: .06em; }
+.hud-value { font-size: 20px; font-weight: 700; color: #fff; line-height: 1.2; }
+#hud-timer.warn { color: #ff5f5f; }
+#hud-timer.ok   { color: #4ade80; }
+
+/* ── Video ── */
+#video-container {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 1;
+  border-radius: 14px;
+  overflow: hidden;
+  background: #111;
+  border: 2px solid #2a2a36;
+}
+#video { width: 100%; height: 100%; object-fit: cover; display: block; }
+#overlay { position: absolute; inset: 0; pointer-events: none; }
+
+/* flash feedback overlay */
+#flash {
+  position: absolute; inset: 0;
+  border-radius: 12px;
+  pointer-events: none;
+  opacity: 0;
+}
+#flash.ok-flash {
+  background: rgba(74,222,128,0.45);
+  opacity: 1;
+  animation: flashOk 0.6s ease forwards;
+}
+#flash.ng-flash {
+  background: rgba(255,80,80,0.45);
+  opacity: 1;
+  animation: flashNg 0.5s ease forwards;
+}
+@keyframes flashOk {
+  0%   { opacity: 1; transform: scale(1); }
+  40%  { opacity: 0.7; transform: scale(1.03); }
+  100% { opacity: 0; transform: scale(1); }
+}
+@keyframes flashNg {
+  0%,100% { opacity: 0; transform: translateX(0); }
+  15%     { opacity: 1; transform: translateX(-8px); }
+  30%     { opacity: 1; transform: translateX(8px); }
+  45%     { opacity: 1; transform: translateX(-6px); }
+  60%     { opacity: 1; transform: translateX(6px); }
+  80%     { opacity: 0.5; transform: translateX(0); }
+}
+
+/* grid OK burst */
+@keyframes gridOkBurst {
+  0%   { transform: scale(1); filter: brightness(1); }
+  30%  { transform: scale(1.06); filter: brightness(1.5) saturate(1.8); }
+  70%  { transform: scale(1.02); filter: brightness(1.2); }
+  100% { transform: scale(1); filter: brightness(1); }
+}
+/* grid NG shake */
+@keyframes gridNgShake {
+  0%,100% { transform: translateX(0); }
+  20%     { transform: translateX(-7px); }
+  40%     { transform: translateX(7px); }
+  60%     { transform: translateX(-5px); }
+  80%     { transform: translateX(5px); }
+}
+
+/* quest card slide-in on new question */
+@keyframes questSlideIn {
+  from { opacity: 0; transform: translateY(-10px) scale(0.97); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+#quest-card.new-quest { animation: questSlideIn 0.35s cubic-bezier(0.22,1,0.36,1); }
+
+/* feedback banner bounce */
+@keyframes feedbackPop {
+  0%   { transform: scale(0.7); opacity: 0; }
+  60%  { transform: scale(1.12); opacity: 1; }
+  100% { transform: scale(1);    opacity: 1; }
+}
+#feedback.ok, #feedback.ng { animation: feedbackPop 0.3s cubic-bezier(0.22,1,0.36,1); }
+
+/* video border glow on OK */
+@keyframes borderGlowOk { 0%,100%{box-shadow:none} 40%{box-shadow:0 0 0 4px rgba(74,222,128,0.7)} }
+@keyframes borderGlowNg { 0%,100%{box-shadow:none} 40%{box-shadow:0 0 0 4px rgba(255,80,80,0.7)} }
+#video-container.glow-ok { animation: borderGlowOk 0.6s ease; }
+#video-container.glow-ng { animation: borderGlowNg 0.5s ease; }
+
+/* ── Quest area ── */
+#quest-area {
+  display: flex;
+  gap: 8px;
+  margin: 10px 0 4px;
+  align-items: stretch;
+}
+#quest-card {
+  flex: 1;
+  padding: 12px 14px;
+  background: #1a1a22;
+  border-radius: 12px;
+  border: 1px solid #2a2a36;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-height: 90px;
+}
+#quest-badge {
+  font-size: 10px;
+  color: #666;
+  letter-spacing: .08em;
+  margin-bottom: 6px;
+}
+#quest-main {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.q-swatch {
+  width: 28px; height: 28px;
+  border-radius: 6px;
+  border: 2px solid rgba(255,255,255,0.2);
+  flex-shrink: 0;
+}
+.q-color-name { font-size: 22px; font-weight: 800; line-height: 1; }
+.q-wo         { font-size: 16px; color: #666; }
+.q-count      { font-size: 28px; font-weight: 800; color: #facc15; line-height: 1; }
+.q-ko         { font-size: 16px; color: #aaa; }
+#quest-sub    { font-size: 11px; color: #60a5fa; margin-top: 5px; }
+
+/* ── Next quest preview ── */
+#next-quest-card {
+  width: 82px;
+  padding: 8px 8px;
+  background: #13131a;
+  border-radius: 10px;
+  border: 1px solid #222230;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+}
+#next-label  { font-size: 9px; color: #444; letter-spacing: .08em; text-transform: uppercase; }
+.next-swatch { width: 20px; height: 20px; border-radius: 4px; border: 2px solid rgba(255,255,255,0.12); }
+.next-cname  { font-size: 12px; font-weight: 700; color: #666; }
+.next-cnt    { font-size: 18px; font-weight: 800; color: #555; line-height: 1; }
+.next-ko     { font-size: 10px; color: #444; }
+
+/* feedback banner */
+#feedback {
+  text-align: center;
+  font-size: 28px;
+  font-weight: 800;
+  margin: 4px 0;
+  height: 38px;
+  line-height: 38px;
+  letter-spacing: .04em;
+  transition: opacity 0.3s;
+}
+#feedback.ng  { color: #ff5f5f; }
+#feedback.ok  { color: #4ade80; }
+#feedback.hidden { opacity: 0; }
+
+/* ── Live grid (compact) ── */
+#grid-wrap {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 4px 0;
+}
+#grid-display {
+  display: grid;
+  grid-template-columns: repeat(3, 32px);
+  gap: 4px;
+  flex-shrink: 0;
+}
+#grid-display.anim-ok { animation: gridOkBurst 0.6s ease; }
+#grid-display.anim-ng { animation: gridNgShake 0.45s ease; }
+#grid-display.cooldown { opacity: 0.55; pointer-events: none; }
+.cell {
+  width: 32px; height: 32px;
+  border-radius: 5px;
+  border: 2px solid rgba(0,0,0,0.2);
+  background: #333;
+  position: relative;
+  transition: background 0.1s;
+}
+.cell.highlight { border-color: rgba(255,255,255,0.8); box-shadow: 0 0 0 2px rgba(255,255,255,0.35); }
+.cell-label {
+  position: absolute; bottom: 1px; right: 2px;
+  font-size: 8px; font-weight: 700;
+  color: rgba(255,255,255,0.9);
+  text-shadow: 0 1px 2px rgba(0,0,0,0.9);
+}
+#color-count {
+  font-size: 12px;
+  color: #888;
+  line-height: 1.6;
+  flex: 1;
+}
+
+/* ── Screens ── */
+#screen-start, #screen-countdown, #screen-result {
+  display: none;
+  position: absolute;
+  inset: 0;
+  background: #0f0f13;
+  z-index: 100;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 24px;
+}
+#screen-start.active,
+#screen-countdown.active,
+#screen-result.active { display: flex; }
+
+#screen-start h2 { font-size: 26px; font-weight: 700; margin-bottom: 8px; }
+#screen-start p { font-size: 14px; color: #888; line-height: 1.7; margin-bottom: 24px; max-width: 320px; }
+
+#countdown-num {
+  font-size: 96px;
+  font-weight: 800;
+  color: #fff;
+  animation: pop 0.4s ease;
+}
+@keyframes pop { from { transform: scale(1.4); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+
+#result-title { font-size: 28px; font-weight: 800; margin-bottom: 16px; }
+#result-stats { width: 100%; max-width: 280px; margin-bottom: 24px; }
+.result-row {
+  display: flex; justify-content: space-between;
+  padding: 8px 0;
+  border-bottom: 1px solid #2a2a36;
+  font-size: 15px;
+}
+.result-row span:last-child { font-weight: 700; color: #facc15; }
+
+/* ── Buttons ── */
+.btn {
+  padding: 13px 28px;
+  border-radius: 10px;
+  border: none;
+  font-size: 16px;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  transition: transform 0.1s, opacity 0.1s;
+}
+.btn:active { transform: scale(0.97); }
+.btn-primary { background: #4f46e5; color: #fff; }
+.btn-primary:hover { background: #4338ca; }
+.btn-time {
+  background: #1e1e2e;
+  color: #c4b5fd;
+  border: 1.5px solid #4f46e5;
+  font-size: 18px;
+  font-weight: 700;
+  padding: 14px 20px;
+  min-width: 80px;
+}
+.btn-time:hover { background: #2d2b52; }
+.btn-time.selected { background: #4f46e5; color: #fff; }
+.btn-danger  { background: #dc2626; color: #fff; }
+.btn-outline { background: transparent; color: #aaa; border: 1px solid #444; }
+.btn-outline:hover { background: #1a1a22; }
+#btn-reset {
+  position: absolute; top: 12px; right: 12px;
+  padding: 6px 14px;
+  font-size: 12px;
+  border-radius: 7px;
+  border: 1px solid #444;
+  background: transparent;
+  color: #888;
+  cursor: pointer;
+  font-family: inherit;
+  display: none;
+}
+
+/* ── Debug toggle ── */
+#debug-toggle { font-size: 10px; color: #444; text-align: right; cursor: pointer; margin-top: 8px; }
+#debug-panel {
+  display: none; margin-top: 6px;
+  background: #1a1a1a; color: #aaa;
+  border-radius: 8px; padding: 10px;
+  font-family: 'Menlo', monospace; font-size: 10px; line-height: 1.7;
+}
+#debug-panel.visible { display: block; }
+.debug-row { display: flex; justify-content: space-between; gap: 8px; }
+.dswatch { display: inline-block; width: 10px; height: 10px; border-radius: 2px; vertical-align: middle; margin-right: 3px; }
+
+canvas { display: none; }
+
+/* ── Wrapper needs position:relative for overlay screens ── */
+#wrapper { position: relative; min-height: 100vh; }
+</style>
+</head>
+<body>
+<div id="wrapper">
+<div id="app">
+
+  <!-- HUD -->
+  <div id="hud">
+    <div class="hud-item">
+      <div class="hud-label">残り時間</div>
+      <div class="hud-value" id="hud-timer">3:00</div>
+    </div>
+    <div class="hud-item">
+      <div class="hud-label">クリア</div>
+      <div class="hud-value" id="hud-score">0</div>
+    </div>
+    <div class="hud-item">
+      <div class="hud-label">問題</div>
+      <div class="hud-value" id="hud-q">—</div>
+    </div>
+  </div>
+  <button id="btn-reset">リセット</button>
+
+  <!-- Camera -->
+  <div id="video-container">
+    <video id="video" autoplay playsinline muted></video>
+    <svg id="overlay" viewBox="0 0 300 300" xmlns="http://www.w3.org/2000/svg">
+      <rect x="60"  y="60"  width="60" height="60" fill="none" stroke="white" stroke-width="1.2" stroke-dasharray="4,3" opacity="0.6"/>
+      <rect x="120" y="60"  width="60" height="60" fill="none" stroke="white" stroke-width="1.2" stroke-dasharray="4,3" opacity="0.6"/>
+      <rect x="180" y="60"  width="60" height="60" fill="none" stroke="white" stroke-width="1.2" stroke-dasharray="4,3" opacity="0.6"/>
+      <rect x="60"  y="120" width="60" height="60" fill="none" stroke="white" stroke-width="1.2" stroke-dasharray="4,3" opacity="0.6"/>
+      <rect x="120" y="120" width="60" height="60" fill="none" stroke="white" stroke-width="1.2" stroke-dasharray="4,3" opacity="0.6"/>
+      <rect x="180" y="120" width="60" height="60" fill="none" stroke="white" stroke-width="1.2" stroke-dasharray="4,3" opacity="0.6"/>
+      <rect x="60"  y="180" width="60" height="60" fill="none" stroke="white" stroke-width="1.2" stroke-dasharray="4,3" opacity="0.6"/>
+      <rect x="120" y="180" width="60" height="60" fill="none" stroke="white" stroke-width="1.2" stroke-dasharray="4,3" opacity="0.6"/>
+      <rect x="180" y="180" width="60" height="60" fill="none" stroke="white" stroke-width="1.2" stroke-dasharray="4,3" opacity="0.6"/>
+      <rect x="58" y="58" width="184" height="184" fill="none" stroke="rgba(255,255,255,0.4)" stroke-width="1.5" rx="4"/>
+    </svg>
+    <div id="flash"></div>
+  </div>
+
+  <!-- Quest area: current + next preview -->
+  <div id="quest-area">
+    <div id="quest-card">
+      <div id="quest-badge">—</div>
+      <div id="quest-main">
+        <span style="font-size:14px;color:#555;">ゲーム開始を待っています</span>
+      </div>
+      <div id="quest-sub"></div>
+    </div>
+    <div id="next-quest-card">
+      <div id="next-label">NEXT</div>
+      <div class="next-swatch" id="next-swatch" style="background:#333"></div>
+      <div class="next-cname" id="next-cname">—</div>
+      <div class="next-cnt" id="next-cnt">—</div>
+      <div class="next-ko" id="next-ko"></div>
+    </div>
+  </div>
+
+  <!-- Feedback -->
+  <div id="feedback" class="hidden"></div>
+
+  <!-- Live grid + count -->
+  <div id="grid-wrap">
+    <div id="grid-display">
+      <div class="cell" id="c0"><span class="cell-label"></span></div>
+      <div class="cell" id="c1"><span class="cell-label"></span></div>
+      <div class="cell" id="c2"><span class="cell-label"></span></div>
+      <div class="cell" id="c3"><span class="cell-label"></span></div>
+      <div class="cell" id="c4"><span class="cell-label"></span></div>
+      <div class="cell" id="c5"><span class="cell-label"></span></div>
+      <div class="cell" id="c6"><span class="cell-label"></span></div>
+      <div class="cell" id="c7"><span class="cell-label"></span></div>
+      <div class="cell" id="c8"><span class="cell-label"></span></div>
+    </div>
+    <div id="color-count"></div>
+  </div>
+
+  <!-- Debug -->
+  <div id="debug-toggle">▸ debug</div>
+  <div id="debug-panel"><div id="debug-content">—</div></div>
+
+</div><!-- /#app -->
+
+<!-- ── SCREEN: Start ── -->
+<div id="screen-start" class="active">
+  <h2>🎲 ルービックカラーゲーム</h2>
+  <p>
+    カメラにキューブの面を向けて、<br>お題の色の数を揃えよう！<br><br>
+    5もんに1ど「1こ以上」ボーなす もんだいあり
+  </p>
+  <p style="font-size:13px;color:#666;margin-bottom:16px;">じかんをえらんでね</p>
+  <div style="display:flex;gap:10px;">
+    <button class="btn btn-time" data-sec="60">60びょう</button>
+    <button class="btn btn-time" data-sec="120">120びょう</button>
+    <button class="btn btn-time" data-sec="180">180びょう</button>
+  </div>
+</div>
+
+<!-- ── SCREEN: Countdown ── -->
+<div id="screen-countdown">
+  <div id="countdown-num">3</div>
+</div>
+
+<!-- ── SCREEN: Result ── -->
+<div id="screen-result">
+  <div id="result-title">⏱ タイムアップ！</div>
+  <div id="result-stats"></div>
+  <p style="font-size:13px;color:#666;margin-bottom:12px;">もう一度あそぶ？じかんをえらんでね</p>
+  <div style="display:flex;gap:10px;">
+    <button class="btn btn-time" data-sec="60">60びょう</button>
+    <button class="btn btn-time" data-sec="120">120びょう</button>
+    <button class="btn btn-time" data-sec="180">180びょう</button>
+  </div>
+</div>
+
+</div><!-- /#wrapper -->
+<canvas id="capture-canvas"></canvas>
+
+<script>
+// ══════════════════════════════════════════════
+//  SOUND ENGINE  (Web Audio API)
+// ══════════════════════════════════════════════
+let audioCtx = null;
+function getAudioCtx(){
+  if(!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  return audioCtx;
+}
+
+function playTone(freq, type, startTime, duration, gainVal=0.3){
+  const ctx = getAudioCtx();
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+  osc.connect(gain); gain.connect(ctx.destination);
+  osc.type = type;
+  osc.frequency.setValueAtTime(freq, startTime);
+  gain.gain.setValueAtTime(gainVal, startTime);
+  gain.gain.exponentialRampToValueAtTime(0.001, startTime + duration);
+  osc.start(startTime);
+  osc.stop(startTime + duration);
+}
+
+function soundOk(){
+  const ctx = getAudioCtx(), t = ctx.currentTime;
+  // bright ascending two-tone chord
+  playTone(523, 'sine',     t,       0.18, 0.35); // C5
+  playTone(659, 'sine',     t+0.08,  0.22, 0.35); // E5
+  playTone(784, 'triangle', t+0.15,  0.28, 0.28); // G5
+}
+
+function soundNg(){
+  const ctx = getAudioCtx(), t = ctx.currentTime;
+  // low buzz drop
+  playTone(200, 'sawtooth', t,       0.08, 0.25);
+  playTone(140, 'square',   t+0.07,  0.22, 0.22);
+}
+
+function soundTick(){
+  const ctx = getAudioCtx(), t = ctx.currentTime;
+  playTone(880, 'sine', t, 0.08, 0.18);
+}
+
+function soundGo(){
+  const ctx = getAudioCtx(), t = ctx.currentTime;
+  playTone(523, 'sine', t,      0.12, 0.3);
+  playTone(659, 'sine', t+0.1,  0.12, 0.3);
+  playTone(1047,'sine', t+0.2,  0.25, 0.4);
+}
+
+function soundTimeUp(){
+  const ctx = getAudioCtx(), t = ctx.currentTime;
+  // 下降する重い3音 + 長い余韻
+  playTone(440, 'sine', t,       0.3,  0.4);
+  playTone(349, 'sine', t+0.28,  0.3,  0.4);
+  playTone(262, 'sine', t+0.56,  0.6,  0.45);
+  // 低音の重みを足す
+  playTone(131, 'triangle', t+0.56, 0.8, 0.2);
+}
+
+// ══════════════════════════════════════════════
+// ══════════════════════════════════════════════
+const CUBE_COLORS = [
+  { name:'W', label:'しろ',   r:255, g:255, b:255, hex:'#FFFFFF' },
+  { name:'Y', label:'きいろ', r:255, g:213, b:0,   hex:'#FFD500' },
+  { name:'O', label:'オレンジ',r:255, g:88,  b:0,  hex:'#FF5800' },
+  { name:'R', label:'あか',   r:196, g:30,  b:58,  hex:'#C41E3A' },
+  { name:'B', label:'あお',   r:0,   g:70,  b:173, hex:'#0046AD' },
+  { name:'G', label:'みどり', r:0,   g:155, b:72,  hex:'#009B48' },
+];
+
+function rgbDist(r1,g1,b1,r2,g2,b2){ const dr=r1-r2,dg=g1-g2,db=b1-b2; return dr*dr+dg*dg+db*db; }
+
+function rgbToHsv(r,g,b){
+  r/=255; g/=255; b/=255;
+  const max=Math.max(r,g,b), min=Math.min(r,g,b), d=max-min;
+  let h=0, s=max===0?0:d/max, v=max;
+  if(max!==min){
+    switch(max){
+      case r: h=((g-b)/d+(g<b?6:0))/6; break;
+      case g: h=((b-r)/d+2)/6; break;
+      case b: h=((r-g)/d+4)/6; break;
+    }
+  }
+  return {h:h*360,s,v};
+}
+
+function classifyColor(r,g,b){
+  const {h,s,v}=rgbToHsv(r,g,b);
+
+  // しろ: 明度高・彩度低
+  if(v>0.72&&s<0.22) return CUBE_COLORS[0];
+
+  // 彩度が低すぎる場合はグレー扱い → RGBフォールバックへ
+  if(s<0.25){
+    let best=CUBE_COLORS[0],bestD=Infinity;
+    for(const c of CUBE_COLORS){
+      const d=rgbDist(r,g,b,c.r,c.g,c.b);
+      if(d<bestD){bestD=d;best=c;}
+    }
+    return best;
+  }
+
+  // 色相で明確に分離
+  // あお:   195〜260
+  if(h>=195&&h<=260) return CUBE_COLORS[4];
+  // みどり: 80〜165
+  if(h>=80&&h<=165)  return CUBE_COLORS[5];
+  // きいろ: 38〜80
+  if(h>=38&&h<=80)   return CUBE_COLORS[1];
+
+  // 赤〜オレンジ帯 (h<38 または h>300) を彩度と色相で分離
+  // オレンジ: hue 14〜37、かつ G成分が比較的高い (r>g*1.8)
+  // あか:     hue 0〜13 または hue 300〜360
+  if(h>300||h<=37){
+    if(h>=14&&h<=37&&r>100&&g>40){
+      // オレンジ寄りかどうかをRGB比率で判断
+      // オレンジ: R>>G>>B、赤: R>>B、Gは低い
+      const orangeScore = g/(r+1);  // Gの比率が高いほどオレンジ
+      if(orangeScore>0.18) return CUBE_COLORS[2]; // オレンジ
+    }
+    return CUBE_COLORS[3]; // あか
+  }
+
+  // どれにも当てはまらない場合: RGBユークリッド距離フォールバック
+  let best=CUBE_COLORS[0],bestD=Infinity;
+  for(const c of CUBE_COLORS){
+    const d=rgbDist(r,g,b,c.r,c.g,c.b);
+    if(d<bestD){bestD=d;best=c;}
+  }
+  return best;
+}
+
+function sampleCell(imgData,cw,ch,col,row){
+  const cropX=(cw-ch)/2, side=ch;
+  const oL=0.20,oT=0.20,oW=0.60,oH=0.60;
+  const cW=oW/3,cH=oH/3,pad=0.035;
+  const nx0=oL+col*cW+pad, ny0=oT+row*cH+pad;
+  const nx1=oL+(col+1)*cW-pad, ny1=oT+(row+1)*cH-pad;
+  const x0=Math.floor(cropX+nx0*side), y0=Math.floor(ny0*side);
+  const x1=Math.floor(cropX+nx1*side), y1=Math.floor(ny1*side);
+  let rS=0,gS=0,bS=0,cnt=0;
+  for(let y=y0;y<y1;y+=3){ for(let x=x0;x<x1;x+=3){ const i=(y*cw+x)*4; rS+=imgData.data[i]; gS+=imgData.data[i+1]; bS+=imgData.data[i+2]; cnt++; } }
+  if(!cnt) return {r:128,g:128,b:128};
+  return {r:Math.round(rS/cnt),g:Math.round(gS/cnt),b:Math.round(bS/cnt)};
+}
+
+const video=document.getElementById('video');
+const capCanvas=document.getElementById('capture-canvas');
+const capCtx=capCanvas.getContext('2d');
+
+function detectColors(){
+  if(video.readyState<2) return null;
+  const vw=video.videoWidth||640, vh=video.videoHeight||480;
+  capCanvas.width=vw; capCanvas.height=vh;
+  capCtx.drawImage(video,0,0,vw,vh);
+  const imgData=capCtx.getImageData(0,0,vw,vh);
+  const res=[];
+  for(let row=0;row<3;row++) for(let col=0;col<3;col++){
+    const rgb=sampleCell(imgData,vw,vh,col,row);
+    res.push({...classifyColor(rgb.r,rgb.g,rgb.b),rgb});
+  }
+  return { colors: res, imgData, vw, vh };
+}
+
+// ══════════════════════════════════════════════
+//  QUEST GENERATOR
+// ══════════════════════════════════════════════
+// Quest types:
+//   {type:'exact', color, count}   → exactly `count` of `color`
+//   {type:'range', color, min, max} → between min..max of `color` (bonus)
+//   {type:'hard',  color, count}   → exactly `count` (hard, count>=5)
+
+const COLOR_NAMES = ['しろ','きいろ','オレンジ','あか','あお','みどり'];
+const COLOR_KEYS  = ['W','Y','O','R','B','G'];
+const COLOR_HEX   = ['#FFFFFF','#FFD500','#FF5800','#C41E3A','#0046AD','#009B48'];
+
+function randInt(a,b){ return a+Math.floor(Math.random()*(b-a+1)); }
+function randColor(){ return randInt(0,5); }
+
+function makeQuest(questionNum){
+  if(questionNum % 5 === 0){
+    const ci=randColor();
+    return {
+      type:'range', colorIdx:ci,
+      colorName:COLOR_NAMES[ci], colorKey:COLOR_KEYS[ci], colorHex:COLOR_HEX[ci],
+      min:1, max:9, countDisplay:'1〜9',
+      sub:'1こ以上あればOK！ボーなす もんだい',
+    };
+  }
+  const isHard   = questionNum > 10;
+  const hardBig  = isHard && (questionNum % 10 === 0);
+  const ci=randColor();
+  const count = hardBig ? 5 : isHard ? randInt(2,5) : randInt(1,3);
+  return {
+    type:'exact', colorIdx:ci,
+    colorName:COLOR_NAMES[ci], colorKey:COLOR_KEYS[ci], colorHex:COLOR_HEX[ci],
+    count, countDisplay:String(count),
+    sub: isHard ? '🔥 じょうきゅう もんだい' : '',
+  };
+}
+
+function checkQuest(quest, colors){
+  const cnt=colors.filter(c=>c.name===quest.colorKey).length;
+  if(quest.type==='exact') return cnt===quest.count;
+  if(quest.type==='range') return cnt>=quest.min && cnt<=quest.max;
+  return false;
+}
+
+// ══════════════════════════════════════════════
+//  GAME STATE
+// ══════════════════════════════════════════════
+let GAME_DURATION = 180;
+
+let state = 'idle';
+let score = 0;
+let questionNum = 0;
+let currentQuest = null;
+let nextQuest_   = null; // prefetched next quest
+let timeLeft = GAME_DURATION;
+let timerInterval = null;
+let animFrame = null;
+let lastColors = null;
+let okCooldown = false;
+let ngCooldown = false;
+let hardQuestSolved = false;
+let hardQuestTotal = 0;
+
+// ── DOM refs ──
+const hudTimer    = document.getElementById('hud-timer');
+const hudScore    = document.getElementById('hud-score');
+const hudQ        = document.getElementById('hud-q');
+const questCard   = document.getElementById('quest-card');
+const questBadge  = document.getElementById('quest-badge');
+const questMain   = document.getElementById('quest-main');
+const questSub    = document.getElementById('quest-sub');
+const feedbackEl  = document.getElementById('feedback');
+const colorCount  = document.getElementById('color-count');
+const flashEl     = document.getElementById('flash');
+const btnReset    = document.getElementById('btn-reset');
+const debugToggle = document.getElementById('debug-toggle');
+const debugPanel  = document.getElementById('debug-panel');
+const debugContent= document.getElementById('debug-content');
+const nextSwatch  = document.getElementById('next-swatch');
+const nextCname   = document.getElementById('next-cname');
+const nextCnt     = document.getElementById('next-cnt');
+const nextKo      = document.getElementById('next-ko');
+
+const screenStart    = document.getElementById('screen-start');
+const screenCountdown= document.getElementById('screen-countdown');
+const screenResult   = document.getElementById('screen-result');
+const countdownNum   = document.getElementById('countdown-num');
+
+// ── Timer ──
+function formatTime(s){
+  const m=Math.floor(s/60), sec=s%60;
+  return `${m}:${sec.toString().padStart(2,'0')}`;
+}
+
+function startTimer(){
+  timeLeft=GAME_DURATION;
+  hudTimer.textContent=formatTime(timeLeft);
+  hudTimer.className='hud-value';
+  timerInterval=setInterval(()=>{
+    timeLeft--;
+    hudTimer.textContent=formatTime(timeLeft);
+    if(timeLeft<=10){
+      hudTimer.className='hud-value warn';
+      soundTick(); // countdown beep each second
+    } else if(timeLeft<=30){
+      hudTimer.className='hud-value warn';
+    } else {
+      hudTimer.className='hud-value ok';
+    }
+    if(timeLeft<=0){ clearInterval(timerInterval); endGame(); }
+  },1000);
+}
+
+// ── Quest UI ──
+function renderQuestCard(quest, qNum){
+  const isRange = quest.type==='range';
+  const isHard  = qNum > 10;
+  questBadge.textContent = isRange ? '★ ボーなす もんだい' : (isHard ? '🔥 じょうきゅう' : '📋 もんだい');
+  questMain.innerHTML = `
+    <span class="q-swatch" style="background:${quest.colorHex}"></span>
+    <span class="q-color-name" style="color:${quest.colorHex==='#FFFFFF'?'#ddd':quest.colorHex}">${quest.colorName}</span>
+    <span class="q-wo">を</span>
+    <span class="q-count">${quest.countDisplay}</span>
+    <span class="q-ko">こ</span>
+  `;
+  questSub.textContent = quest.sub || '';
+  hudQ.textContent = qNum;
+}
+
+function renderNextCard(quest){
+  if(!quest){ nextSwatch.style.background='#333'; nextCname.textContent='—'; nextCnt.textContent=''; nextKo.textContent=''; return; }
+  nextSwatch.style.background = quest.colorHex;
+  nextCname.textContent = quest.colorName;
+  nextCnt.textContent   = quest.countDisplay;
+  nextKo.textContent    = 'こ';
+}
+
+function advanceQuest(){
+  questionNum++;
+  currentQuest = nextQuest_ || makeQuest(questionNum);
+  nextQuest_   = makeQuest(questionNum + 1);
+  renderQuestCard(currentQuest, questionNum);
+  renderNextCard(nextQuest_);
+  okCooldown=false;
+  ngCooldown=false;
+  stableOkFrames=0;
+  stableNgFrames=0;
+  feedbackEl.className='hidden';
+  feedbackEl.textContent='';
+  questCard.classList.remove('new-quest');
+  void questCard.offsetWidth;
+  questCard.classList.add('new-quest');
+}
+
+// ── Effects (flash + grid anim + border glow) ──
+const videoContainer = document.getElementById('video-container');
+const gridDisplay    = document.getElementById('grid-display');
+
+function triggerEffect(type){
+  // flash overlay
+  flashEl.className='';
+  void flashEl.offsetWidth;
+  flashEl.className = type+'-flash';
+  setTimeout(()=>{ flashEl.className=''; }, 700);
+
+  // grid animation
+  gridDisplay.classList.remove('anim-ok','anim-ng');
+  void gridDisplay.offsetWidth;
+  gridDisplay.classList.add('anim-'+type);
+  setTimeout(()=>{ gridDisplay.classList.remove('anim-ok','anim-ng'); }, 700);
+
+  // border glow
+  videoContainer.classList.remove('glow-ok','glow-ng');
+  void videoContainer.offsetWidth;
+  videoContainer.classList.add('glow-'+type);
+  setTimeout(()=>{ videoContainer.classList.remove('glow-ok','glow-ng'); }, 700);
+}
+
+// ── Feedback ──
+let feedbackTimeout=null;
+function showFeedback(msg,type,permanent){
+  clearTimeout(feedbackTimeout);
+  feedbackEl.textContent=msg;
+  feedbackEl.className=type;
+  if(!permanent){
+    feedbackTimeout=setTimeout(()=>{ feedbackEl.className='hidden'; feedbackEl.textContent=''; },1200);
+  }
+}
+
+// ── Game loop ──
+let stableOkFrames = 0;
+let stableNgFrames = 0;
+const STABLE_FRAMES_NEEDED = 8;  // ~133ms of consistent OK to accept
+const STABLE_NG_NEEDED     = 10; // ~167ms of consistent NG to fire
+
+// ══════════════════════════════════════════════
+//  CUBE DETECTION  — edge contrast at grid lines
+// ══════════════════════════════════════════════
+// Strategy: sample pixel pairs that straddle each internal grid boundary.
+// A real cube face will have colour transitions at cell edges.
+// A face / wall / hand will have low contrast everywhere.
+//
+// Grid occupies 20%-80% of the (square) display space.
+// Internal vertical boundaries are at x = 40%, 60% (of display).
+// Internal horizontal boundaries are at y = 40%, 60% (of display).
+// We sample several pixel pairs 4px either side of each boundary line.
+
+// ══════════════════════════════════════════════
+//  CUBE DETECTION  — キューブ色マッチスコア判定
+//
+//  考え方：ルービックキューブの各マスは
+//  白・黄・橙・赤・青・緑のどれかにRGB的に近い。
+//  肌・壁・机・床はこれらのどの色とも遠い「中間色」。
+//
+//  → 9マス中「最近傍キューブ色との距離が閾値以下」の
+//    マスが一定数以上あればキューブと判断する。
+//
+//  追加条件：全マスが同じ色に分類されていない
+//  （= 最低2種類の色が存在する）
+// ══════════════════════════════════════════════
+
+function samplePixel(imgData, cw, rawX, rawY){
+  const x = Math.max(0, Math.min(cw-1, Math.round(rawX)));
+  const y = Math.max(0, Math.min(imgData.height-1, Math.round(rawY)));
+  const i = (y * cw + x) * 4;
+  return { r: imgData.data[i], g: imgData.data[i+1], b: imgData.data[i+2] };
+}
+
+function colourDiff(a, b){
+  const dr=a.r-b.r, dg=a.g-b.g, db=a.b-b.b;
+  return Math.sqrt(dr*dr + dg*dg + db*db);
+}
+
+// 各キューブ色の参照RGB（classifyColorと同じ値）
+const CUBE_REF = [
+  {r:255,g:255,b:255}, // W しろ
+  {r:255,g:213,b:0},   // Y きいろ
+  {r:255,g:88, b:0},   // O オレンジ
+  {r:196,g:30, b:58},  // R あか
+  {r:0,  g:70, b:173}, // B あお
+  {r:0,  g:155,b:72},  // G みどり
+];
+
+// あるRGBが「キューブらしい色か」を判定
+// → 6色のうち最も近い色との距離が MATCH_TH 以下ならtrue
+const MATCH_TH = 95; // RGB距離（0〜441）。大きいほど緩い
+
+function isRubiksColor(rgb){
+  const best = Math.min(...CUBE_REF.map(c => rgbDist(rgb.r,rgb.g,rgb.b,c.r,c.g,c.b)));
+  return Math.sqrt(best) < MATCH_TH;
+}
+
+function isCubeVisible(imgData, cw, ch, detectedColors){
+  // ── 条件1: 9マスのうちMIN_MATCH個以上が「キューブ色」に十分近い ──
+  const MIN_MATCH = 6; // 9マス中6マス以上
+
+  const cropX = (cw - ch) / 2;
+  const side  = ch;
+  const oL=0.20, oT=0.20, oW=0.60, oH=0.60;
+
+  let matchCount = 0;
+  for(let row=0; row<3; row++){
+    for(let col=0; col<3; col++){
+      // 各セル中心のRGBを直接取得（sampleCellより軽量な単点サンプル）
+      const nx = oL + (col + 0.5) * (oW/3);
+      const ny = oT + (row + 0.5) * (oH/3);
+      const rawX = cropX + nx * side;
+      const rawY = ny * side;
+      const px = samplePixel(imgData, cw, rawX, rawY);
+      if(isRubiksColor(px)) matchCount++;
+    }
+  }
+
+  if(matchCount < MIN_MATCH) return false;
+
+  // ── 条件2: 全マス同じ色ではない（最低2色以上）──
+  const freq = {};
+  for(const c of detectedColors) freq[c.name] = (freq[c.name]||0)+1;
+  if(Object.keys(freq).length < 2) return false;
+
+  return true;
+}
+
+function gameLoop(){
+  const detected=detectColors();
+  if(detected){
+    const { colors, imgData, vw, vh } = detected;
+    lastColors=colors;
+    const cubeVisible = (state==='playing' && currentQuest && !okCooldown)
+      ? isCubeVisible(imgData, vw, vh, colors)
+      : undefined;
+    updateGrid(colors);
+    updateDebug(colors, vw, vh, cubeVisible);
+
+    if(state==='playing' && currentQuest && !okCooldown){
+
+      if(!cubeVisible){
+        stableOkFrames=0;
+        stableNgFrames=0;
+        if(!ngCooldown) { feedbackEl.className='hidden'; }
+        animFrame=requestAnimationFrame(gameLoop);
+        return;
+      }
+
+      const passed=checkQuest(currentQuest,colors);
+      if(passed){
+        stableOkFrames++;
+        stableNgFrames=0;
+        if(stableOkFrames>=STABLE_FRAMES_NEEDED){
+          onCorrect();
+        }
+      } else {
+        stableOkFrames=0;
+        const cnt=colors.filter(c=>c.name===currentQuest.colorKey).length;
+        if(currentQuest.type==='exact'){
+          stableNgFrames++;
+          if(stableNgFrames>=STABLE_NG_NEEDED && !ngCooldown){
+            stableNgFrames=0;
+            ngCooldown=true;
+            soundNg();
+            triggerEffect('ng');
+            showFeedback(`NG — ${currentQuest.colorName} が ${cnt}こ`, 'ng', false);
+            setTimeout(()=>{ ngCooldown=false; }, 1400);
+          }
+        } else {
+          stableNgFrames=0;
+          feedbackEl.className='hidden';
+        }
+      }
+    }
+  }
+  animFrame=requestAnimationFrame(gameLoop);
+}
+
+function onCorrect(){
+  okCooldown=true;
+  stableOkFrames=0;
+  score++;
+  hudScore.textContent=score;
+
+  if(currentQuest.type==='exact' && currentQuest.count>=5){
+    hardQuestSolved=true;
+    hardQuestTotal++;
+  }
+
+  soundOk();
+  triggerEffect('ok');
+  showFeedback('✓ クリア！', 'ok', true);
+  gridDisplay.classList.add('cooldown');
+
+  // 2秒後に次の問題へ
+  setTimeout(()=>{
+    gridDisplay.classList.remove('cooldown');
+    advanceQuest();
+  }, 2000);
+}
+
+// ── Grid display ──
+function updateGrid(colors){
+  const targetKey = currentQuest ? currentQuest.colorKey : null;
+  colors.forEach((c,i)=>{
+    const el=document.getElementById('c'+i);
+    if(!el) return;
+    el.style.background=c.hex;
+    el.querySelector('.cell-label').textContent=c.label;
+    el.className='cell'+(targetKey&&c.name===targetKey?' highlight':'');
+  });
+  if(targetKey && colors){
+    const cnt=colors.filter(c=>c.name===targetKey).length;
+    const cname=CUBE_COLORS.find(c=>c.name===targetKey)?.label||'';
+    colorCount.innerHTML=`<span style="font-size:13px;color:#aaa;">${cname}：</span><span style="font-size:16px;font-weight:700;color:#facc15;">${cnt}</span><span style="font-size:12px;color:#888;">こ</span>`;
+  } else {
+    colorCount.textContent='';
+  }
+}
+
+// ── Debug ──
+function updateDebug(colors, vw, vh, cubeVisible){
+  if(!debugPanel.classList.contains('visible')) return;
+  const labels=['左上','上','右上','左','中','右','左下','下','右下'];
+  const cX=Math.round(((vw||0)-(vh||0))/2);
+  const cubeStr = cubeVisible===undefined ? '—' : (cubeVisible ? '✓ あり' : '✗ なし');  let h=`<div style="color:#555;margin-bottom:4px;">${vw||0}×${vh||0} cropX:±${cX} キューブ:${cubeStr}</div>`;
+  h+=colors.map((c,i)=>{
+    const {r,g,b}=c.rgb;
+    return `<div class="debug-row"><span>${labels[i]}</span><span><span class="dswatch" style="background:rgb(${r},${g},${b})"></span>rgb(${r},${g},${b})</span><span><span class="dswatch" style="background:${c.hex}"></span>${c.label}</span></div>`;
+  }).join('');
+  debugContent.innerHTML=h;
+}
+
+// ── End game ──
+function endGame(){
+  state='result';
+  cancelAnimationFrame(animFrame);
+  clearInterval(timerInterval);
+  soundTimeUp();
+
+  const statsEl=document.getElementById('result-stats');
+  statsEl.innerHTML=`
+    <div class="result-row"><span>クリア問題数</span><span>${score} 問</span></div>
+    <div class="result-row"><span>最終問題番号</span><span>${questionNum} 問目</span></div>
+    <div class="result-row"><span>上級問題クリア</span><span>${hardQuestSolved?`${hardQuestTotal}問 ✓`:'なし'}</span></div>
+    <div class="result-row"><span>モード</span><span>${questionNum>10?'🔥 上級突入':'通常'}</span></div>
+  `;
+
+  const titleEl=document.getElementById('result-title');
+  if(score>=20) titleEl.textContent='🏆 パーフェクト！';
+  else if(score>=12) titleEl.textContent='🎉 お見事！';
+  else if(score>=6) titleEl.textContent='👍 よくできました！';
+  else titleEl.textContent='⏱ タイムアップ！';
+
+  btnReset.style.display='none';
+  screenResult.classList.add('active');
+}
+
+// ── Countdown ──
+function runCountdown(cb){
+  let n=3;
+  countdownNum.textContent=n;
+  soundTick();
+  screenCountdown.classList.add('active');
+  const iv=setInterval(()=>{
+    n--;
+    if(n===0){
+      countdownNum.textContent='GO！';
+      soundGo();
+    } else if(n<0){
+      clearInterval(iv);
+      screenCountdown.classList.remove('active');
+      cb();
+    } else {
+      countdownNum.textContent=n;
+      countdownNum.style.animation='none';
+      void countdownNum.offsetWidth;
+      countdownNum.style.animation='pop 0.4s ease';
+      soundTick();
+    }
+  },900);
+}
+
+// ── Start game ──
+function startGame(duration){
+  GAME_DURATION = duration;
+  score=0; questionNum=0; currentQuest=null; nextQuest_=null;
+  hardQuestSolved=false; hardQuestTotal=0;
+  stableOkFrames=0; okCooldown=false; ngCooldown=false; stableNgFrames=0;
+  hudScore.textContent='0'; hudQ.textContent='—';
+  hudTimer.textContent=formatTime(GAME_DURATION);
+  hudTimer.className='hud-value ok';
+  feedbackEl.className='hidden';
+  colorCount.textContent='';
+  questBadge.textContent='—';
+  questMain.innerHTML='<span style="font-size:14px;color:#555;">じゅんびちゅう...</span>';
+  questSub.textContent='';
+  renderNextCard(null);
+  btnReset.style.display='block';
+
+  screenStart.classList.remove('active');
+  screenResult.classList.remove('active');
+
+  nextQuest_ = makeQuest(1);
+  renderNextCard(nextQuest_);
+
+  runCountdown(()=>{
+    state='playing';
+    startTimer();
+    advanceQuest();
+    gameLoop();
+  });
+}
+
+// ── Reset ──
+function resetGame(){
+  cancelAnimationFrame(animFrame);
+  clearInterval(timerInterval);
+  state='idle';
+  btnReset.style.display='none';
+  screenStart.classList.add('active');
+  screenResult.classList.remove('active');
+  screenCountdown.classList.remove('active');
+  feedbackEl.className='hidden';
+  colorCount.textContent='';
+  questBadge.textContent='—';
+  questMain.innerHTML='<span style="font-size:14px;color:#555;">ゲーム かいし を まっています</span>';
+  questSub.textContent='';
+  renderNextCard(null);
+  hudTimer.textContent=formatTime(GAME_DURATION);
+  hudTimer.className='hud-value';
+  hudScore.textContent='0';
+  hudQ.textContent='—';
+  // restart passive camera loop for preview
+  gameLoop();
+}
+
+// ── Events ──
+document.querySelectorAll('.btn-time').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const sec = parseInt(btn.dataset.sec, 10);
+    startGame(sec);
+  });
+});
+btnReset.addEventListener('click', resetGame);
+debugToggle.addEventListener('click',()=>{
+  const v=debugPanel.classList.toggle('visible');
+  debugToggle.textContent=(v?'▾':'▸')+' debug';
+});
+
+// ── Camera ──
+async function startCamera(){
+  try{
+    const stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'},width:{ideal:1280},height:{ideal:720}}});
+    video.srcObject=stream;
+    video.onloadedmetadata=()=>{
+      video.play();
+      console.log(`[RubikGame] Camera: ${video.videoWidth}×${video.videoHeight}`);
+      gameLoop(); // passive preview loop
+    };
+  }catch(err){
+    console.error('[RubikGame] Camera error:',err);
+    document.getElementById('screen-start').querySelector('p').innerHTML+=
+      `<br><span style="color:#f87171">⚠ カメラエラー: ${err.message}</span>`;
+  }
+}
+
+startCamera();
+</script>
+</body>
+</html>
