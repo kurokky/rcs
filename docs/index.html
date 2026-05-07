@@ -389,38 +389,51 @@ function rgbToHsv(r,g,b){r/=255;g/=255;b/=255;const max=Math.max(r,g,b),min=Math
 function classifyColor(r,g,b){
   const{h,s,v}=rgbToHsv(r,g,b);
 
-  // しろ: 明度高・彩度低
+  // ── しろ ──
   if(v>CFG.whiteV&&s<CFG.whiteS)return CUBE_COLORS[0];
 
-  // 彩度が低くても hue が明確な色帯に入っていれば優先判定
-  // （インカメラ・蛍光灯下で彩度が落ちた青・緑・黄をRGBフォールバックで誤判定するのを防ぐ）
-  if(s>=0.10){
-    if(h>=185&&h<=270)return CUBE_COLORS[4]; // あお（少し広め）
-    if(h>=75&&h<=170) return CUBE_COLORS[5]; // みどり
-    if(h>=35&&h<=75)  return CUBE_COLORS[1]; // きいろ
+  // ── RGB成分の大小関係で青・赤・緑を最優先判定 ──
+  // hueはカメラのホワイトバランス・暗所でズレるが、
+  // 「どの成分が最大か」はほぼ崩れない
+
+  const dominant = (b>r&&b>g) ? 'B' : (r>g&&r>b) ? 'R' : (g>r&&g>b) ? 'G' : 'N';
+
+  // あお: Bが最大 かつ それなりに青い（暗い青でも通る）
+  if(dominant==='B' && b>60){
+    // 青っぽさの強さを確認（グレーとの区別）
+    const blueness = b - Math.max(r,g);
+    if(blueness > 20) return CUBE_COLORS[4];
   }
 
-  // 彩度が低い → RGBフォールバックだが青と赤の混同を避けるため
-  // B成分が支配的なら青を返す
+  // みどり: Gが最大 かつ hueが緑帯
+  if(dominant==='G' && h>=70&&h<=170) return CUBE_COLORS[5];
+
+  // きいろ: R≒G>B かつ hueが黄帯
+  if(h>=35&&h<=80&&r>60&&g>60&&b<Math.min(r,g)*0.7) return CUBE_COLORS[1];
+
+  // しろ寄りのグレー・彩度低
   if(s<CFG.grayS){
-    if(b>r&&b>g&&b>80)return CUBE_COLORS[4]; // あお
+    // グレーフォールバック: BがRより大きければ青寄りとして青を返す
+    if(b>r+15&&b>g+15) return CUBE_COLORS[4];
     let best=CUBE_COLORS[0],bestD=Infinity;
     for(const c of CUBE_COLORS){const d=rgbDist(r,g,b,c.r,c.g,c.b);if(d<bestD){bestD=d;best=c;}}
     return best;
   }
 
-  // 高彩度の hue 判定
-  if(h>=185&&h<=270)return CUBE_COLORS[4]; // あお
-  if(h>=75&&h<=170) return CUBE_COLORS[5]; // みどり
-  if(h>=35&&h<=75)  return CUBE_COLORS[1]; // きいろ
-
-  // 赤〜オレンジ帯
-  if(h>270||h<=37){
-    if(h>=CFG.orangeHMin&&h<=37&&r>100&&g>40){if(g/(r+1)>CFG.orangeG)return CUBE_COLORS[2];}
+  // あか・オレンジ帯（Rが最大）
+  if(dominant==='R'||h>270||h<=37){
+    if(h>=CFG.orangeHMin&&h<=37&&r>100&&g>40){
+      if(g/(r+1)>CFG.orangeG)return CUBE_COLORS[2]; // オレンジ
+    }
     return CUBE_COLORS[3]; // あか
   }
 
-  // フォールバック
+  // hueベース補完
+  if(h>=185&&h<=270)return CUBE_COLORS[4];
+  if(h>=75&&h<=170) return CUBE_COLORS[5];
+  if(h>=35&&h<=75)  return CUBE_COLORS[1];
+
+  // 最終フォールバック
   let best=CUBE_COLORS[0],bestD=Infinity;
   for(const c of CUBE_COLORS){const d=rgbDist(r,g,b,c.r,c.g,c.b);if(d<bestD){bestD=d;best=c;}}
   return best;
